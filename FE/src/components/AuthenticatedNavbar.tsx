@@ -1,0 +1,382 @@
+// src/components/AuthenticatedNavbar.tsx
+import React, { useState, useRef, useEffect } from 'react';
+import { useUser } from '../contexts/UserContext';
+import ContactPopup from './ContactPopup';
+// Add these imports at the top
+import ErrorLogger from '../utils/ErrorLogger';
+
+
+interface AuthenticatedNavbarProps {
+  onNavigate: (page: string) => void;
+  currentPage: string;
+}
+// Profile Photo Component
+const ProfilePhoto: React.FC = () => {
+  const { user } = useUser();
+
+  const profileStyle: React.CSSProperties = {
+    width: '30px',
+    height: '30px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundRepeat: 'no-repeat',
+
+  };
+
+  if (user?.profilePhoto) {
+    // User has profile photo
+    return (
+      <div
+        style={{
+          ...profileStyle,
+          backgroundImage: `url(${user.profilePhoto})`
+        }}
+      />
+    );
+  } else {
+    // Use default profile photo from CSS variable
+    return (
+      <div
+        style={{
+          ...profileStyle,
+          backgroundImage: 'var(--default-pp)'
+        }}
+      />
+    );
+  }
+};
+
+
+const AuthenticatedNavbar: React.FC<AuthenticatedNavbarProps> = ({ onNavigate, currentPage}) => {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [showSupportPopup, setShowSupportPopup] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [lastScrollY, setLastScrollY] = useState(0);
+  const [isScrollingUp, setIsScrollingUp] = useState(false);
+
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const windowHeight = window.innerHeight;
+
+      // Check if scrolled past 10% of viewport
+      const scrolled = currentScrollY > windowHeight * 0.1;
+
+      // Check scroll direction
+      const scrollingUp = currentScrollY < lastScrollY;
+
+      setIsScrolled(scrolled);
+      setIsScrollingUp(scrollingUp);
+      setLastScrollY(currentScrollY);
+    };
+
+    // Only add scroll listener on settings page
+    if (currentPage === 'settings' || currentPage === 'privacy-and-terms' || currentPage === 'dashboard') {
+      window.addEventListener('scroll', handleScroll);
+      handleScroll(); // Check initial scroll position
+    }
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [currentPage, lastScrollY]);
+  // Add this helper function inside the AuthenticatedNavbar component
+  const getNavbarThemeClass = () => {
+    // You'll need to determine how to detect mood selection screen
+    // Option 1: If you pass currentPage prop
+    if (currentPage === 'dashboard') {
+      if(isScrolled && !isScrollingUp) {
+        return 'navbar-auth-dashboard navbar-auth-settings-hidden';
+      }
+      return 'navbar-auth-dashboard ';
+    }
+    if (currentPage === 'globe') {
+      return 'navbar-auth-globe';
+    }
+    if (currentPage === 'settings') {
+      // Hide navbar if scrolled down on settings page
+      if (isScrolled && !isScrollingUp) {
+        return 'navbar-auth-settings navbar-auth-settings-hidden';
+      }
+      return 'navbar-auth-settings';
+    }
+
+    if (currentPage === 'privacy-and-terms') {
+      if (isScrolled && !isScrollingUp) {
+        return 'navbar-auth-privacy-terms navbar-auth-settings-hidden';
+      }
+      return 'navbar-auth-privacy-terms';
+    }
+    // Option 2: Or check URL/route
+    // if (window.location.pathname === '/mood-selection') {
+    //   return 'navbar-auth-mood-selection';
+    // }
+
+    return ''; // Default - no additional theme class
+  };
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleDropdownToggle = () => {
+    setShowDropdown(!showDropdown);
+  };
+
+  const handleDropdownItemClick = (action: string) => {
+    setShowDropdown(false); // Close dropdown first
+
+    switch (action) {
+      case 'settings':
+        onNavigate('settings');
+        break;
+      case 'support':
+        setShowSupportPopup(true);
+        break;
+      case 'privacy':
+        onNavigate('privacy-and-terms');
+        break;
+      case 'logout':
+        onNavigate('logout');
+        break;
+    }
+  };
+
+  // Support popup handlers
+  const handleSupportClose = () => {
+    setShowSupportPopup(false);
+  };
+
+  const handleSupportSubmit = async (reason: string, message: string, email?: string) => {
+    try {
+      // Prepare headers
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+  
+      // Add authorization header if user is authenticated
+      const authToken = localStorage.getItem('authToken');
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+  
+      // Make API call to backend
+      const response = await fetch('http://localhost:5000/api/contact/', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          reason,
+          message,
+          email
+        })
+      });
+  
+      const data = await response.json();
+  
+      if (!response.ok) {
+        throw data;
+      }
+  
+      console.log('✅ Support message sent successfully:', data.message);
+      console.log('📧 Submission ID:', data.submissionId);
+  
+    } catch (error) {
+      // Log error and get UI message
+      const uiMessage = ErrorLogger.logError(
+        error,
+        { service: "ContactService", action: "submitContactForm" },
+        { logToConsole: true, logToUI: true }
+      );
+      throw new Error(uiMessage);
+    }
+  };
+
+
+
+  return (
+    <>
+      <nav className={`navbar-auth ${getNavbarThemeClass()}`}>
+        <div className="text-2xl font-bold">MoodSense</div>
+        <div className="flex gap-6 items-center">
+          <button
+            className={`navbar-button ${currentPage === 'home' ? 'font-semibold' : ''}`}
+            onClick={() => onNavigate('mood')}
+          >
+            Home
+          </button>
+          <button
+            className={`navbar-button ${currentPage === 'globe' ? 'font-semibold' : ''}`}
+            onClick={() => onNavigate('globe')}
+          >
+            Globe
+          </button>
+          <button
+            className={`navbar-button ${currentPage === 'dashboard' ? 'font-semibold' : ''}`}
+            onClick={() => onNavigate('dashboard')}
+          >
+            Dashboard
+          </button>
+
+          {/* Account Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              className="navbar-button flex items-center gap-1 px-2 py-1 rounded transition-colors"
+              onClick={handleDropdownToggle}
+              onMouseEnter={() => setShowDropdown(true)}
+            >
+              {/* Profile Circle */}
+              <ProfilePhoto />
+
+              {/* Account Text */}
+              <span>Account</span>
+
+              {/* Dropdown Arrow */}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                style={{
+                  transform: showDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease'
+                }}
+              >
+                <polyline points="6,9 12,15 18,9"></polyline>
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            {showDropdown && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: '0',
+                  backgroundColor: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                  minWidth: '160px',
+                  zIndex: 50,
+                  marginTop: '4px'
+                }}
+                onMouseLeave={() => setShowDropdown(false)}
+              >
+                <div style={{ padding: '8px 0' }}>
+                  <button
+                    onClick={() => handleDropdownItemClick('settings')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 16px',
+                      fontSize: '14px',
+                      color: '#374151',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    Settings
+                  </button>
+
+                  <button
+                    onClick={() => handleDropdownItemClick('support')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 16px',
+                      fontSize: '14px',
+                      color: '#374151',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    Support
+                  </button>
+
+                  <button
+                    onClick={() => handleDropdownItemClick('privacy')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 16px',
+                      fontSize: '14px',
+                      color: '#374151',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    Privacy & Terms
+                  </button>
+
+                  {/* Separator */}
+                  <div style={{
+                    height: '1px',
+                    backgroundColor: '#e5e7eb',
+                    margin: '4px 0'
+                  }} />
+
+                  <button
+                    onClick={() => handleDropdownItemClick('logout')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 16px',
+                      fontSize: '14px',
+                      color: '#dc2626',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#fef2f2'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    Logout
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </nav>
+      {/* Support Popup */}
+      <ContactPopup
+        isOpen={showSupportPopup}
+        onClose={handleSupportClose}
+        onSubmit={handleSupportSubmit}
+      />
+    </>
+  );
+};
+
+export default AuthenticatedNavbar;
