@@ -7,7 +7,6 @@ Project Essentials/
 # ENVIRONMENT VARIABLES (CRITICAL)
 # ============================================
 # Ignore ALL .env files
-.env*
 # Allow .env.example to be tracked (template file)
 !.env.example
 
@@ -45,7 +44,6 @@ lerna-debug.log*
 # ============================================
 # EDITOR & IDE
 # ============================================
-.vscode/
 
 # JetBrains IDEs
 .idea/
@@ -66,3 +64,4 @@ Thumbs.db
 branch_structure.json
 temp_auto_push.bat
 temp_interactive_push.bat
+config.bat
